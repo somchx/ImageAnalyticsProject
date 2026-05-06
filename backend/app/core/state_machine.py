@@ -27,6 +27,7 @@ class SmoothedSnapshot:
     cooked_area_smooth: float
     burn_risk_smooth: float
     smoke_smooth: float
+    char_area_smooth: float = 0.0   # true char area % (ashen pixels)
 
 
 class GrillStateMachine:
@@ -59,8 +60,10 @@ class GrillStateMachine:
     def _evaluate(self, s: SmoothedSnapshot) -> GrillState:
         t = self.thresholds
 
-        # Emergency override — jump to BURNT from any state
-        if s.L_star_smooth < 18.0 or s.burn_risk_smooth > 35.0:
+        # Emergency override: truly charred pixels OR extremely dark L*
+        # char_area_smooth uses L*<22 AND near-zero a*/b* (ashen gray),
+        # so it only fires on real char — not on dark-brown cooked meat.
+        if s.L_star_smooth < 18.0 or s.char_area_smooth > 20.0:
             return GrillState.BURNT
 
         # Require minimum hold before advancing

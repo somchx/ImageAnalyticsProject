@@ -69,6 +69,7 @@ def run_pipeline(
         "browning_smooth": raw.browning_score,
         "cooked_area_smooth": raw.cooked_area_pct,
         "burn_risk_smooth": raw.burn_risk_area_pct,
+        "char_area_smooth": raw.char_area_pct,
         "smoke_smooth": raw.smoke_density,
     })
     snap = SmoothedSnapshot(**smoothed_dict)
@@ -120,13 +121,22 @@ def _annotate_frame(
     contours, _ = cv2.findContours(roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
 
-    # Burn risk overlay: pixels where L* < 30 → red tint
+    # Dual-layer burn overlay:
+    #   - True char (L*<22, |a*|<6, |b*|<6): solid red
+    #   - Overcooked/dark zone (L*<30, not char): orange tint
     if len(roi_L) > 0:
-        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2Lab)
+        lab  = cv2.cvtColor(frame, cv2.COLOR_BGR2Lab)
         L_ch = lab[:, :, 0].astype(np.float64) / 2.55
-        burn_mask = ((L_ch < 30.0) & (roi_mask > 0)).astype(np.uint8) * 255
+        a_ch = lab[:, :, 1].astype(np.float64) - 128.0
+        b_ch = lab[:, :, 2].astype(np.float64) - 128.0
+        in_roi    = roi_mask > 0
+        char_mask = (
+            (L_ch < 22.0) & (np.abs(a_ch) < 6.0) & (np.abs(b_ch) < 6.0) & in_roi
+        ).astype(np.uint8) * 255
+        dark_mask = ((L_ch < 30.0) & in_roi & (char_mask == 0)).astype(np.uint8) * 255
         overlay = frame.copy()
-        overlay[burn_mask > 0] = (0, 0, 220)
+        overlay[dark_mask > 0] = (0, 100, 255)   # orange = overcooked risk
+        overlay[char_mask > 0] = (0,   0, 220)   # red    = true char
         frame = cv2.addWeighted(frame, 0.65, overlay, 0.35, 0)
 
     # State text
@@ -205,7 +215,7 @@ def _generate_explanation(
     elif state == GrillState.BURNT:
         parts.append(
             f"Burnt detected: L*={snap.L_star_smooth:.1f} (threshold 22.0) or "
-            f"burn area={snap.burn_risk_smooth:.1f}%. Remove immediately."
+            f"char area={snap.char_area_smooth:.1f}% (threshold 20%). Remove immediately."
         )
 
     for alert in alerts:

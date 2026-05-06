@@ -1,11 +1,13 @@
 """
 Per-frame metric computation from CIELAB ROI pixel arrays.
+
 Browning score formula based on Maillard reaction color changes.
-No AI/ML — pure arithmetic on CIE color values.
+char_area_pct identifies truly charred (ashen) pixels by their near-zero
+a* and b* values — distinguishing genuine char from dark-but-cooked meat.
 """
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -19,6 +21,7 @@ class RawMetrics:
     browning_score: float
     cooked_area_pct: float
     burn_risk_area_pct: float
+    char_area_pct: float = 0.0   # true char: L*<22 AND |a*|<6 AND |b*|<6
     smoke_density: float = 0.0
 
 
@@ -36,24 +39,26 @@ def compute_metrics(
       sig_a: redness increase from Maillard reaction — weight 0.30
       sig_b: yellowness increase from browning — weight 0.20
 
-    Cooked area: pixels where L*<55 AND a*>4 (browned tissue)
-    Burn risk area: pixels where L*<30 (dark/charred tissue)
+    Cooked area   : pixels where L*<55 AND a*>4  (browned tissue)
+    Burn risk area: pixels where L*<30            (overcooked / dark zone)
+    Char area     : pixels where L*<22 AND |a*|<6 AND |b*|<6
+                    (ashen gray = true char, not warm dark-brown)
     """
     if len(roi_L) == 0:
         return RawMetrics(
             L_star_mean=75.0, L_star_std=0.0,
-            a_star_mean=2.0, a_star_std=0.0,
-            b_star_mean=8.0, b_star_std=0.0,
+            a_star_mean=2.0,  a_star_std=0.0,
+            b_star_mean=8.0,  b_star_std=0.0,
             browning_score=0.0, cooked_area_pct=0.0,
-            burn_risk_area_pct=0.0,
+            burn_risk_area_pct=0.0, char_area_pct=0.0,
         )
 
     L_mean = float(np.mean(roi_L))
-    L_std = float(np.std(roi_L))
+    L_std  = float(np.std(roi_L))
     a_mean = float(np.mean(roi_a))
-    a_std = float(np.std(roi_a))
+    a_std  = float(np.std(roi_a))
     b_mean = float(np.mean(roi_b))
-    b_std = float(np.std(roi_b))
+    b_std  = float(np.std(roi_b))
 
     # Browning composite score
     sig_L = 1.0 - float(np.clip(L_mean / 75.0, 0.0, 1.0))
@@ -61,13 +66,23 @@ def compute_metrics(
     sig_b = float(np.clip((b_mean - 8.0) / 25.0, 0.0, 1.0))
     browning_score = float(np.clip(0.50 * sig_L + 0.30 * sig_a + 0.20 * sig_b, 0.0, 1.0))
 
-    # Pixel classifications
     n = roi_pixel_count
-    cooked_pixels = int(np.sum((roi_L < 55.0) & (roi_a > 4.0)))
+
+    # Cooked area: browned tissue (dark + reddish)
+    cooked_pixels    = int(np.sum((roi_L < 55.0) & (roi_a > 4.0)))
+
+    # Burn risk area: dark zone (overcooked warning; still may be warm brown)
     burn_risk_pixels = int(np.sum(roi_L < 30.0))
 
-    cooked_area_pct = float(cooked_pixels / n * 100.0)
+    # Char area: true char (ashen/gray — color is desaturated, not warm brown)
+    # Class 04 Euclidean-distance idea: pixel near origin in a*b* plane AND very dark
+    char_pixels      = int(np.sum(
+        (roi_L < 22.0) & (np.abs(roi_a) < 6.0) & (np.abs(roi_b) < 6.0)
+    ))
+
+    cooked_area_pct    = float(cooked_pixels    / n * 100.0)
     burn_risk_area_pct = float(burn_risk_pixels / n * 100.0)
+    char_area_pct      = float(char_pixels      / n * 100.0)
 
     return RawMetrics(
         L_star_mean=L_mean,
@@ -79,4 +94,5 @@ def compute_metrics(
         browning_score=browning_score,
         cooked_area_pct=cooked_area_pct,
         burn_risk_area_pct=burn_risk_area_pct,
+        char_area_pct=char_area_pct,
     )

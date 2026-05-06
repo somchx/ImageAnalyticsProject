@@ -83,15 +83,17 @@ class AlertEngine:
                          "L_star_mean", smoothed.L_star_smooth, 22.0)
 
         # Metric-based alerts (require consecutive frames)
-        if smoothed.burn_risk_smooth > 20.0 or smoothed.L_star_smooth < 25.0:
+        # CRITICAL: true char pixels (ashen, L*<22, |a*|<6, |b*|<6) OR very low L*
+        if smoothed.char_area_smooth > 10.0 or smoothed.L_star_smooth < 22.0:
             try_fire("BURN_RISK_CRITICAL", "CRITICAL",
-                     f"Critical burn risk! {smoothed.burn_risk_smooth:.1f}% of surface has L*<30.",
-                     "burn_risk_area_pct", smoothed.burn_risk_smooth, 20.0,
+                     f"Critical burn risk! {smoothed.char_area_smooth:.1f}% char area detected.",
+                     "char_area_pct", smoothed.char_area_smooth, 10.0,
                      required_consecutive=2)
-        elif smoothed.burn_risk_smooth > 10.0:
+        elif smoothed.burn_risk_smooth > 25.0:
+            # Dark-but-not-char zone (threshold raised from 10 → 25 to reduce false positives)
             try_fire("BURN_RISK_HIGH", "WARNING",
                      f"Burn risk area at {smoothed.burn_risk_smooth:.1f}% — reduce heat.",
-                     "burn_risk_area_pct", smoothed.burn_risk_smooth, 10.0,
+                     "burn_risk_area_pct", smoothed.burn_risk_smooth, 25.0,
                      required_consecutive=3)
 
         if smoothed.smoke_smooth > 0.55:
