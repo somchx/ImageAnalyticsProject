@@ -289,3 +289,5 @@ No pretrained models, no neural networks, no ML libraries are used anywhere in t
 | Real-time | WebSocket (FastAPI native) |
 | Notifications | Telegram Bot API (httpx) |
 | Deployment | Docker + Docker Compose + Nginx |
+
+# Test
